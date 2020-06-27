@@ -8,8 +8,8 @@ label_dir = [data_path,'label_2/'];
 path_ima = [data_path,'image_2/'];
 
 %% inputs
-frame = 2520;
-ego_transform = [-1350 , 3890, 10, 180]';
+frame = 2341;
+ego_transform = [-17270 , 5400, 10, 20]';
 
 %% calculate absolute position of other vehicle labels
 ry_ego = ego_transform(4)/180*pi;

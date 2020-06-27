@@ -9,7 +9,7 @@ from utils.probability_utils import cov_interp_3D
 imageSet_dir = '/mnt/d/Berkeley/Kitti_data/object/kitti/ImageSets/'
 list_dir = imageSet_dir+'{}.txt'.format('val_Hujie')
 
-#BEV corner uncertainty
+#3D corner uncertainty
 unc_dir = '/mnt/d/Berkeley/Kitti_data/predictions/Hujie_unc_full_val50/unc_data/'
 
 #write the new imageSet file as Hujie has been using a different one
