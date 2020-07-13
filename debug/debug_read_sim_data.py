@@ -46,19 +46,19 @@ def draw_introduction_with_uncertainty(output_dir, out_file_name, points_cam, po
 	pscale = 0
 	inference = label_inference_BEV(gen_std=gs, degree_register=dr, prob_outlier=0.03)
 	IoUcalculator = label_uncertainty_IoU(grid_size=grid_size, range=2)
-	fig, axes = plt.subplots(nrows=1, ncols=1, figsize=[10,7])
+	fig, axes = plt.subplots(nrows=1, ncols=1, figsize=[8,14])
 	for i in range(len(points_clip_BEVs)):
 		certain_label = uncertain_prediction_BEVdelta(label_boxBEVs[i])
 		uncertain_label = inference.infer(points_clip_BEVs[i], label_boxBEVs[i], prior_scaler=pscale)
 		#draw spatial distribution
 		cntr = draw_subplot(objs[i],points_clip_BEVs[i], certain_label, uncertain_label, IoUcalculator, axes, fig, sample_grid, grid_size, [gs], [dr])
-	fig.colorbar(cntr, ax=axes)
+	#fig.colorbar(cntr, ax=axes)
 	axes.scatter(points_cam[:, 0], points_cam[:, 2], c='y', marker='x', s=0.1)#
 	for i in range(len(points_clip_BEVs)):
 		points_clip_BEV = points_clip_BEVs[i]
 		axes.scatter(points_clip_BEV[:, 0], points_clip_BEV[:, 1], c='r', marker='x', s=3)
-	axes.set_xlim(-15.0,5.0) #axes.set_xlim(0.0, 60.0)  #
-	axes.set_ylim(10.0,37.0) #axes.set_ylim(-20.0, 20.0)  #
+	axes.set_xlim(-20.0,20.0) #axes.set_xlim(0.0, 60.0)  #
+	axes.set_ylim(-10.0,60.0) #axes.set_ylim(-20.0, 20.0)  #
 	out_file_path = os.path.join(output_dir, out_file_name+'.png')
 	plt.savefig(out_file_path)
 	plt.close()
