@@ -2,7 +2,6 @@ import numpy as np
 from scipy.spatial import Delaunay
 import scipy
 #import lib.utils.object3d as object3d
-import torch
 
 '''
 def get_objects_from_label(label_file):
@@ -11,6 +10,17 @@ def get_objects_from_label(label_file):
     objects = [object3d.Object3d(line) for line in lines]
     return objects
 '''
+
+def box3d_to_boxBEV(box3d, ry=None):
+    # Kitti 3D bounding box is [x, y_top, z, h, w, l]
+    assert len(box3d.shape)==2, 'The box3d must be n*6 or n*7.'
+    if box3d.shape[1] == 7:
+        boxBEV = box3d[:, [0,2,5,4,6]]
+    elif ry is not None:
+        boxBEV = np.concatenate((box3d[:, [0,2,5,4]], ry.reshape([-1,1])), axis=1)
+    else:
+        assert False, 'Error: box3d and ry not provided correctly.'
+    return boxBEV
 
 def dist_to_plane(plane, points):
     """
@@ -39,27 +49,6 @@ def rotate_pc_along_y(pc, rot_angle):
     sinval = np.sin(rot_angle)
     rotmat = np.array([[cosval, -sinval], [sinval, cosval]])
     pc[:, [0, 2]] = np.dot(pc[:, [0, 2]], np.transpose(rotmat))
-    return pc
-
-
-def rotate_pc_along_y_torch(pc, rot_angle):
-    """
-    :param pc: (N, 512, 3 + C)
-    :param rot_angle: (N)
-    :return:
-    TODO: merge with rotate_pc_along_y_torch in bbox_transform.py
-    """
-    cosa = torch.cos(rot_angle).view(-1, 1)  # (N, 1)
-    sina = torch.sin(rot_angle).view(-1, 1)  # (N, 1)
-
-    raw_1 = torch.cat([cosa, -sina], dim=1)  # (N, 2)
-    raw_2 = torch.cat([sina, cosa], dim=1)  # (N, 2)
-    R = torch.cat((raw_1.unsqueeze(dim=1), raw_2.unsqueeze(dim=1)), dim=1)  # (N, 2, 2)
-
-    pc_temp = pc[:, :, [0, 2]]  # (N, 512, 2)
-
-    pc[:, :, [0, 2]] = torch.matmul(pc_temp, R.permute(0, 2, 1))  # (N, 512, 2)
-
     return pc
 
 
@@ -99,53 +88,6 @@ def boxes3d_to_corners3d(boxes3d, rotate=True):
     corners = np.concatenate((x.reshape(-1, 8, 1), y.reshape(-1, 8, 1), z.reshape(-1, 8, 1)), axis=2)
 
     return corners.astype(np.float32)
-
-
-def boxes3d_to_corners3d_torch(boxes3d, flip=False):
-    """
-    :param boxes3d: (N, 7) [x, y, z, h, w, l, ry]
-    :return: corners_rotated: (N, 8, 3)
-    """
-    boxes_num = boxes3d.shape[0]
-    h, w, l, ry = boxes3d[:, 3:4], boxes3d[:, 4:5], boxes3d[:, 5:6], boxes3d[:, 6:7]
-    if flip:
-        ry = ry + np.pi
-    centers = boxes3d[:, 0:3]
-    zeros = torch.cuda.FloatTensor(boxes_num, 1).fill_(0)
-    ones = torch.cuda.FloatTensor(boxes_num, 1).fill_(1)
-
-    x_corners = torch.cat([l / 2., l / 2., -l / 2., -l / 2., l / 2., l / 2., -l / 2., -l / 2.], dim=1)  # (N, 8)
-    y_corners = torch.cat([zeros, zeros, zeros, zeros, -h, -h, -h, -h], dim=1)  # (N, 8)
-    z_corners = torch.cat([w / 2., -w / 2., -w / 2., w / 2., w / 2., -w / 2., -w / 2., w / 2.], dim=1)  # (N, 8)
-    corners = torch.cat((x_corners.unsqueeze(dim=1), y_corners.unsqueeze(dim=1), z_corners.unsqueeze(dim=1)), dim=1) # (N, 3, 8)
-
-    cosa, sina = torch.cos(ry), torch.sin(ry)
-    raw_1 = torch.cat([cosa, zeros, sina], dim=1)
-    raw_2 = torch.cat([zeros, ones, zeros], dim=1)
-    raw_3 = torch.cat([-sina, zeros, cosa], dim=1)
-    R = torch.cat((raw_1.unsqueeze(dim=1), raw_2.unsqueeze(dim=1), raw_3.unsqueeze(dim=1)), dim=1)  # (N, 3, 3)
-
-    corners_rotated = torch.matmul(R, corners)  # (N, 3, 8)
-    corners_rotated = corners_rotated + centers.unsqueeze(dim=2).expand(-1, -1, 8)
-    corners_rotated = corners_rotated.permute(0, 2, 1)
-    return corners_rotated
-
-
-def boxes3d_to_bev_torch(boxes3d):
-    """
-    :param boxes3d: (N, 7) [x, y, z, h, w, l, ry]
-    :return:
-        boxes_bev: (N, 5) [x1, y1, x2, y2, ry]
-    """
-    boxes_bev = boxes3d.new(torch.Size((boxes3d.shape[0], 5)))
-
-    cu, cv = boxes3d[:, 0], boxes3d[:, 2]
-    half_l, half_w = boxes3d[:, 5] / 2, boxes3d[:, 4] / 2
-    boxes_bev[:, 0], boxes_bev[:, 1] = cu - half_l, cv - half_w
-    boxes_bev[:, 2], boxes_bev[:, 3] = cu + half_l, cv + half_w
-    boxes_bev[:, 4] = boxes3d[:, 6]
-    return boxes_bev
-
 
 def enlarge_box3d(boxes3d, extra_width):
     """

@@ -120,7 +120,7 @@ def main():
 		frame = int(file.split('.')[0])
 		np_data = read_sim_data(sim_file_dir)
 		points_cam = get_point_cam(np_data['points'])
-		all_gts =  np.logical_and(np.array(label_data['difficulty'][frame])>=0,np.array(label_data['class_id'][frame])==1)
+		all_gts =  np.logical_and(np.array(label_data['difficulty'][frame])>=-1,np.array(label_data['class_id'][frame])==1)
 		active_gt_idxs = np.argwhere(all_gts)
 		gt_idxs = [active_gt_idxs.item(i) for i in range(active_gt_idxs.size)]
 		plot_frame_with_uncertainty(output_dir, label_data, frame, gt_idxs, points_cam, grid_size=0.1, sample_grid=0.02)

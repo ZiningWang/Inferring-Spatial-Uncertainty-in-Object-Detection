@@ -2,6 +2,16 @@ import numpy as np
 import math
 from scipy.stats import multivariate_normal
 from utils.paul_geometry import z_normed_corners_default, center_to_corner_BEV
+from utils.probability_utils import cov_interp_BEV_full
+
+##############################################################
+### Utilities
+##############################################################
+def create_BEV_box_sample_grid(sample_grid):
+	x = np.arange(-0.5 + sample_grid / 2, 0.5, sample_grid)
+	y = x
+	zx, zy = np.meshgrid(x, y)
+	z_normed = np.concatenate((zx.reshape((-1, 1)), zy.reshape((-1, 1))), axis=1)
 
 ##############################################################
 ### Inference of Label Uncertainty class ###
@@ -408,11 +418,7 @@ class uncertain_label_BEV(uncertain_label):
 				probs[clip_idx] = 1 / n_in
 		else:
 			#use the definition we proposed for spatial distribution
-			x = np.arange(-0.5+ sample_grid / 2 , 0.5, sample_grid)
-			y = x
-			unit_prob = 1.0 / x.size / y.size
-			zx, zy = np.meshgrid(x, y)
-			z_normed = np.concatenate((zx.reshape((-1, 1)), zy.reshape((-1, 1))), axis=1)
+			z_normed = create_BEV_box_sample_grid(sample_grid)
 			centers_out, covs_out = self.calc_uncertainty_points(z_normed)
 			for i in range(covs_out.shape[0]):
 				tmp_probs = multivariate_normal.pdf(points, mean=centers_out[i, :], cov=covs_out[i, :, :])
@@ -423,7 +429,7 @@ class uncertain_label_BEV(uncertain_label):
 		return probs
 
 class uncertain_label_3D(uncertain_label):
-	# A minimum unccertain_label_3D
+	# A minimum unccertain_label_3D. TODO: implement sample_prob member
 	def __init__(self, box3D, x_std=[0.44, 0.10, 0.10, 0.25, 0.25, 0.25, 0.1745]):
 		# input box3D is xc,y_top,zc,h,w,l,ry in KITTI format
 		# x0 is xc,yc,zc,l,h,w 
@@ -535,10 +541,21 @@ class uncertain_prediction_BEVdelta(uncertain_prediction):
 		self.sry = math.sin(self.ry)
 		self.rotmat = np.array([[self.cry, -self.sry], [self.sry, self.cry]])
 
+	def get_corner_norms(self):
+		corner_norms = z_normed_corners_default
+		return corner_norms
+
+	def calc_uncertainty_corners(self, std=1):
+		return self.calc_uncertainty_points(self.get_corner_norms())
+
 	def calc_uncertainty_box(self, std=1):
 		#by default, calculate the contour of 1 standard deviation by variance along the boundary of bounding box
 		corners = center_to_corner_BEV(self.boxBEV)
 		return corners, corners
+
+	def calc_uncertainty_points(self, std=1):
+		assert False, 'This must be overloaded by the child class.'
+		return None
 
 	def sample_prob(self, points, sample_grid=0.1):
 
@@ -562,7 +579,7 @@ class uncertain_prediction_BEVdelta(uncertain_prediction):
 		return probs
 
 class uncertain_prediction_BEV(uncertain_prediction_BEVdelta):
-# follow the distribution of Di Feng's model, not the same as WZN's label uncertainty model
+# The uncertain prediction bounding box from Di Feng's model, not the same as WZN's label uncertainty model
 # std = [xc1, xc2, log(l), log(w), 0, 0]
 # approximate std(l) = exp(std(log(l)))-1
 	def __init__(self, boxBEV, std):
@@ -608,7 +625,7 @@ class uncertain_prediction_BEV(uncertain_prediction_BEVdelta):
 		cov = self.cov0_feature
 		Jacobians_point = self.Jacobian_z_normed(z_normed)
 		covs_out = np.zeros((z_normed.shape[0], 2, 2))
-		centers_out = np.matmul(z_normed * self.feature0[2:4], self.rotmat.transpose()) + self.x0[0:2]
+		centers_out = np.matmul(z_normed * self.x0[2:4], self.rotmat.transpose()) + self.x0[0:2]
 		for i in range(nz):
 			Jacobian_point = np.squeeze(Jacobians_point[i, :, :])
 			covs_out[i, :, :] = (Jacobian_point @ cov) @ Jacobian_point.transpose()
@@ -625,10 +642,7 @@ class uncertain_prediction_BEV(uncertain_prediction_BEVdelta):
 			probs = self.sample_prob_delta(points)
 		else:
 			probs = np.zeros(nk)
-			x = np.arange(-0.5 + sample_grid / 2, 0.5, sample_grid)
-			y = x
-			zx, zy = np.meshgrid(x, y)
-			z_normed = np.concatenate((zx.reshape((-1, 1)), zy.reshape((-1, 1))), axis=1)
+			z_normed = create_BEV_box_sample_grid(sample_grid)
 			centers_out, covs_out = self.calc_uncertainty_points(z_normed)
 			for i in range(covs_out.shape[0]):
 				tmp_probs = multivariate_normal.pdf(points, mean=centers_out[i, :], cov=covs_out[i, :, :])
@@ -637,3 +651,43 @@ class uncertain_prediction_BEV(uncertain_prediction_BEVdelta):
 				probs += tmp_probs
 			probs /= np.sum(probs)
 		return probs
+
+class uncertain_prediction_BEV_interp(uncertain_prediction_BEVdelta):
+	# The uncertain prediction bounding box with sampled corners (from Hujie's paper) as input.
+	def __init__(self, boxBEV, Ws, Vs):
+		'''
+		Construct the box with corner uncertainty inputs.
+
+		Args:
+			Ws: The homogeneous coordinates of sampled points. (4 or 6 points)
+			Vs: The covariance matrix of sampled points.
+		'''
+		uncertain_prediction_BEVdelta.__init__(self, boxBEV)
+		self.num_points = len(Ws)
+		assert Vs.shape[1] == 2, 'Varaicne matrix error.'
+		if self.num_points == 6:
+			self.cov_interpolation = cov_interp_BEV_full(Ws, Vs)
+		elif self.num_points == 4: 
+			self.cov_interpolation = cov_interp_BEV_corner(Ws, Vs)
+		else: 
+			raise ValueError('the number of sampled points can only be 4 or 6 for BEV while %d is given.' % self.num_points)
+
+	def calc_uncertainty_box(self, std=1):
+		uncertain_prediction_BEV.calc_uncertainty_box(self, std=std)
+
+	def calc_uncertainty_points(self, z_normed):
+		ws = np.concatenate((z_normed, np.ones([z_normed.shape[0], 1])), axis=1)
+		covs_out = self.cov_interpolation.interps(ws)
+		centers_out = np.matmul(z_normed * self.x0[2:4], self.rotmat.transpose()) + self.x0[0:2]
+		return centers_out, covs_out
+
+	def sample_prob(self, point, sample_grid=0.1):
+		nk = points.shape[0]
+		probs = np.zeros(nk)
+		z_normed = create_BEV_box_sample_grid(sample_grid)
+		centers_out, covs_out = self.calc_uncertainty_points(z_normed)	
+		for i in range(covs_out.shape[0]):
+			tmp_probs = multivariate_normal.pdf(points, mean=centers_out[i, :], cov=covs_out[i, :, :])
+			probs += tmp_probs
+		probs /= np.sum(probs)
+

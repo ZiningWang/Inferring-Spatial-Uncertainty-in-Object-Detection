@@ -806,6 +806,7 @@ def lidar_to_camera(x, y, z, calib_mat=None):
     p = np.matmul(np.array(Tr_velo_to_cam), p)
     p = np.matmul(np.array(R0), p)
     p = p[0:3]
+    
     return tuple(p)
 
 def lidar_to_camera_box(boxes, calib_mat=None):
