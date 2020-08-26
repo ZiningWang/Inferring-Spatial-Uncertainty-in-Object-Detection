@@ -6,11 +6,11 @@ sys.path.append(os.path.abspath('../'))
 import utils.metric_utils#probability_utils
 from utils.probability_utils import Hujie_uncertainty_reader as unc_reader
 from utils.probability_utils import cov_interp_3D 
-from simple_stats import label_reader, detection_reader, hacker_reader, evaluate_new_IoU, get_dirs
+from utils.simple_stats import label_reader, detect_reader, hacker_reader, evaluate_new_IoU, get_dirs
 
 # Labels and data
 actual_test = False
-data_dir = '/home/msc/KITTI/object' #'/data/RPN/coop_DiFeng/WaymoData' #
+data_dir = '/mnt/d/Berkeley/Kitti_data/object' #'/home/msc/KITTI/object' #'/data/RPN/coop_DiFeng/WaymoData' #
 label_uncertainty_subfolder =  'summary/uncertaintyV3_for_labelwellness_0.25_0.8_deg1/'
 
 # Detection results
@@ -20,7 +20,7 @@ pred_3d_dirs['PointRCNN_unc_full'] = ('/mnt/d/Berkeley/Kitti_data/predictions/Hu
 
 def main():
 	# (1) get file list, label and images
-	list_dir, img_dir, lidar_dir, calib_dir = get_dirs(data_dir, actual_test)
+	list_dir, img_dir, lidar_dir, calib_dir, label_3d_dir = get_dirs(data_dir, actual_test)
 
 	num_net = len(networks)
 	pred_datas = [[] for net in networks]
@@ -37,11 +37,16 @@ def main():
 	with open(list_dir) as fi:
 		file_lists = fi.read().splitlines() 
 	file_lists.sort()
+	file_lists = [file_lists[0]]
+
 	label_data = label_reader(label_3d_dir,file_lists,calib_dir)
 	for inet, net in enumerate(networks):
 		hack_datas[inet] = hacker_reader(pred_3d_dirs[net], file_lists)
 		pred_datas[inet] = detect_reader(pred_3d_dirs[net], file_lists)
-		unc_datas[inet] = unc_reader(pred_3d_dirs[net], file_lists)
+		if 'unc' in pred_3d_dirs[net]:
+			unc_datas[inet] = unc_reader(pred_3d_dirs[net], file_lists)
+		else:
+			unc_datas[inet] = None
 
 	#all labels, newIoUs vs IoU
 	difficulty = 'HARD'
@@ -90,56 +95,6 @@ def main():
 	output_newIoU_dir = output_dir + label_uncertainty_subfolder
 	write_NewIoU(output_newIoU_dir, networks, frames, all_gt_idxs, all_pd_idxs, all_IoU_dic)
 	#write_corner_variances(output_root, corner_totalVariances)
-
-	'''
-	#count common fn's and plot
-	difficulty = 'HARD'
-	view = 'G'
-	num_fns = np.zeros(num_net)
-	num_common_fns = 0
-	regression_error_idxs = []
-	output_common_fn_dir = output_dir + 'common_fns/'
-	os.makedirs(output_common_fn_dir, exist_ok=True)
-	frame_idxs_pairs = []
-	iou_hists = {inet: [] for inet in range(len(networks))}
-	print('find common false negatives from {} and view {}'.format(difficulty,view))
-	for file in tqdm(file_lists):
-		frame = int(file.split('.')[0])
-		points_cam = read_points_cam(lidar_dir, frame, label_data)
-		fns = []
-		for inet, net in enumerate(networks):
-			fns.append(hack_datas[inet][difficulty]['gt'][view]['fn'][frame])
-		fns = np.array(fns)==1
-		common_fns = fns[0,:]
-		for inet in range(1,num_net):
-			common_fns = np.logical_and(common_fns,fns[inet,:])
-		common_fns_idx = np.argwhere(common_fns)
-		num_common_fns += common_fns_idx.size
-		if common_fns_idx.size > 0:
-			idxs = [common_fns_idx.item(icommon) for icommon in range(common_fns_idx.size)]
-			#plot_multiview_label(label_data, img_dir, points_cam, frame, idxs, output_common_fn_dir)
-
-			#find overlaps and plot historgram
-			for inet in range(len(networks)):
-				ass_gts = hack_datas[inet][difficulty]['det'][view]['gt'][frame]
-				for idx in idxs:
-					max_iou = 0.0
-					for j,ass_gt in enumerate(ass_gts):
-						if idx == ass_gt:
-							max_iou = max(max_iou, hack_datas[inet][difficulty]['det'][view]['iou'][frame][j])
-					if max_iou>0.1 and max_iou<0.70001: #DEBUG
-						regression_error_idxs.append([frame,idx, max_iou])
-						print('DEBUG: #regression error: ',frame,idx, max_iou)
-					iou_hists[inet].append([frame,idx,max_iou])
-			#count the number of points inside the gt box
-			frame_idxs_pairs.append((frame,idxs))
-	output_common_fn_stats_dir = output_common_fn_dir+'stats/'
-	plot_histogram_network_wise(output_common_fn_stats_dir, 'iou_histogram.png', networks, iou_hists, 2, x_label='IoU', y_label='number of false negatives',n_bins=50)
-	plot_npoint_histogram_label(label_data, points_cam, frame_idxs_pairs, output_common_fn_stats_dir)
-	write_stats_label(label_data, frame_idxs_pairs, output_common_fn_stats_dir, description="false positive stats: ", reg_err_idxs=regression_error_idxs)
-	'''
-
-
 
 
 if __name__ == '__main__':
