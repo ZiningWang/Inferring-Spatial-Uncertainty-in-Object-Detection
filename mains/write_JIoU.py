@@ -6,7 +6,9 @@ sys.path.append(os.path.abspath('../'))
 import utils.metric_utils#probability_utils
 from utils.probability_utils import Hujie_uncertainty_reader as unc_reader
 from utils.probability_utils import cov_interp_3D 
-from utils.simple_stats import label_reader, detect_reader, hacker_reader, evaluate_new_IoU, get_dirs
+from utils.simple_stats import label_reader, detect_reader, hacker_reader, evaluate_new_IoU, get_dirs, read_points_cam
+from utils.metric_plots import write_NewIoU
+from tqdm import tqdm
 
 # Labels and data
 actual_test = False
@@ -20,7 +22,7 @@ pred_3d_dirs['PointRCNN_unc_full'] = ('/mnt/d/Berkeley/Kitti_data/predictions/Hu
 
 def main():
 	# (1) get file list, label and images
-	list_dir, img_dir, lidar_dir, calib_dir, label_3d_dir = get_dirs(data_dir, actual_test)
+	list_dir, img_dir, lidar_dir, calib_dir, label_3d_dir = get_dirs(data_dir, actual_test, val_set='Hujie')
 
 	num_net = len(networks)
 	pred_datas = [[] for net in networks]
@@ -37,12 +39,11 @@ def main():
 	with open(list_dir) as fi:
 		file_lists = fi.read().splitlines() 
 	file_lists.sort()
-	file_lists = [file_lists[0]]
 
 	label_data = label_reader(label_3d_dir,file_lists,calib_dir)
 	for inet, net in enumerate(networks):
 		hack_datas[inet] = hacker_reader(pred_3d_dirs[net], file_lists)
-		pred_datas[inet] = detect_reader(pred_3d_dirs[net], file_lists)
+		pred_datas[inet] = detect_reader(pred_3d_dirs[net], file_lists, label_3d_dir.find('waymo') != -1)
 		if 'unc' in pred_3d_dirs[net]:
 			unc_datas[inet] = unc_reader(pred_3d_dirs[net], file_lists)
 		else:
@@ -56,6 +57,7 @@ def main():
 	all_pd_idxs = [{net:[] for net in networks} for frame in frames]
 	all_IoU_dic = [{net:[] for net in networks} for frame in frames]
 	corner_totalVariances = []
+	print('Processing JIoUs: ')
 	for id_file ,file in enumerate(tqdm(file_lists)):
 		frame = int(file.split('.')[0])
 		points_cam = read_points_cam(lidar_dir, frame, label_data)
@@ -82,7 +84,6 @@ def main():
 						IoU.append(0)
 				all_gt_idxs[id_file][net] = gt_idxs
 				all_pd_idxs[id_file][net] = pd_idxs
-
 				NewIoUs = evaluate_new_IoU(label_data, pred_datas[inet], frame, gt_idxs, pd_idxs, points_cam, grid_size=0.1, sample_grid=0.02, unc_data=unc_datas[inet])
 				for iI in range(len(IoU)):
 					tmp = [IoU[iI]] + NewIoUs[iI]
