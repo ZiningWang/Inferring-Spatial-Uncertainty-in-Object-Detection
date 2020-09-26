@@ -3,25 +3,17 @@ import os
 import sys
 import csv
 import matplotlib.pyplot as plt
-from easydict import EasyDict as edict
 sys.path.append(os.path.abspath('../'))
 from utils.paul_geometry import lidar_to_camera, clip_by_BEV_box, draw_birdeye
 from utils.metric_utils import label_inference_BEV, label_uncertainty_IoU, uncertain_prediction_BEVdelta
 from utils.simple_stats import label_reader
+from utils.kitti_utils import box3DtoObj
 
 KEYS = ['X','Y','Z','intensity'] #intensity is semantic label
 SIM_DATA_DIR = "/mnt/d/Berkeley/Kitti_data/sim_data/"
 FILENAME = "2020-04-23-11-51-35_Velodyne-HDL-32-Data.csv"
 FILELIST = ['004214.txt']
 
-def box3DtoObj(box3D, ry):
-	obj = edict({})
-	obj.R = ry
-	obj.width = box3D[4]
-	obj.length = box3D[5]
-	obj.x = box3D[0]#-y_lidar
-	obj.y = box3D[2]#x_lidar
-	return obj 
 
 def plot_frame_with_uncertainty(output_dir, label_data, frame, gt_idxs, points_cam, grid_size=0.1, sample_grid=0.02):
 	out_file_name = "{:06d}".format(frame)

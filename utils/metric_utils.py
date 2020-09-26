@@ -12,7 +12,7 @@ def create_BEV_box_sample_grid(sample_grid):
 	y = x
 	zx, zy = np.meshgrid(x, y)
 	z_normed = np.concatenate((zx.reshape((-1, 1)), zy.reshape((-1, 1))), axis=1)
-
+	return z_normed
 ##############################################################
 ### Inference of Label Uncertainty class ###
 ##############################################################
@@ -100,7 +100,6 @@ class label_inference_BEV(label_inference):
 		prob_inlier = np.sum(prob_z_y, axis=1)
 		for iz in range(len(self.z_coords)):
 			prob_z_y[:, iz] = prob_z_y[:, iz] / (prob_inlier + self.prob_outlier)
-		print(yc, z_embed)
 		return prob_z_y, z_surface_out, yz_distances
 
 	def infer(self, y, boxBEV, prior_scaler=0):
@@ -673,7 +672,7 @@ class uncertain_prediction_BEV_interp(uncertain_prediction_BEVdelta):
 			raise ValueError('the number of sampled points can only be 4 or 6 for BEV while %d is given.' % self.num_points)
 
 	def calc_uncertainty_box(self, std=1):
-		uncertain_prediction_BEV.calc_uncertainty_box(self, std=std)
+		return uncertain_prediction_BEV.calc_uncertainty_box(self, std=std)
 
 	def calc_uncertainty_points(self, z_normed):
 		ws = np.concatenate((z_normed, np.ones([z_normed.shape[0], 1])), axis=1)
@@ -681,13 +680,22 @@ class uncertain_prediction_BEV_interp(uncertain_prediction_BEVdelta):
 		centers_out = np.matmul(z_normed * self.x0[2:4], self.rotmat.transpose()) + self.x0[0:2]
 		return centers_out, covs_out
 
-	def sample_prob(self, point, sample_grid=0.1):
+	def sample_prob(self, points, sample_grid=0.1):
 		nk = points.shape[0]
 		probs = np.zeros(nk)
 		z_normed = create_BEV_box_sample_grid(sample_grid)
 		centers_out, covs_out = self.calc_uncertainty_points(z_normed)	
+
+		# This is to avoid negative variance due to interpolation.
+		w, v = np.linalg.eig(covs_out)
+		if np.sum(w < 0) > 0:
+			print('Warning: Negative variance detected at a sample')
+			w[w < 0.02**2] = 0.02**2
+			covs_out = np.matmul(np.transpose(v, axes=(0, 2, 1)), np.expand_dims(w, axis=-2) * v)
+
 		for i in range(covs_out.shape[0]):
 			tmp_probs = multivariate_normal.pdf(points, mean=centers_out[i, :], cov=covs_out[i, :, :])
 			probs += tmp_probs
 		probs /= np.sum(probs)
+		return probs
 

@@ -18,6 +18,27 @@ sys.path.append('../')
 from utils.paul_geometry import draw_3dbox_in_2d, read_calib_mat, camera_to_lidar, draw_birdeye, cal_box3d_iou, lidar_to_camera, clip_by_BEV_box, get_cov_ellipse, draw_birdeye_ellipse, center_to_corner_BEV, align_BEV_to_corner
 
 
+def draw_spatial_uncertainty_contour(obj, points_clip_BEV, uncertain_class, IoUcalculator, axes, sample_grid, grid_size):
+	levels = np.array(range(256))/255.0
+	#draw spatial distribution
+	sample_points, pxShape = IoUcalculator.get_sample_points(uncertain_class)
+	px = uncertain_class.sample_prob(sample_points, sample_grid=sample_grid)/grid_size**2
+	innerContour, outerContour = uncertain_class.calc_uncertainty_box(std=2)
+	innerContour = np.vstack((innerContour, innerContour[0,:]))
+	outerContour = np.vstack((outerContour, outerContour[0,:]))
+	#axes.plot(outerContour[:,0], outerContour[:,1],'y--', linewidth=1)
+	#axes.plot(innerContour[:, 0], innerContour[:, 1], 'y--', linewidth=1)
+	px[px>1] = 1.0
+	#px[px<0.04]=-0.1
+	jet_map = plt.cm.jet
+	#cmap.set_under('white',0.1)
+	cntr = axes.contourf(sample_points[:,0].reshape(pxShape), sample_points[:,1].reshape(pxShape), px.reshape(pxShape), levels, cmap=jet_map, vmin=0, vmax=1)
+	draw_birdeye(obj, axes, fill=False, color='r', linewidth=1)
+	#axes.scatter(points_clip_BEV[:, 0], points_clip_BEV[:, 1], c='r', marker='x', s=5)
+	axes.set(xticks=[],yticks=[])
+	axes.set_facecolor((0,0,0.53))
+	return cntr
+
 def plot_multiview_label(label_data, img_dir, points_cam, frame, idxs, output_dir, IoU_dic=None, pd_idxs=None, pred_data=None, draw_uncertainty=True):
 	name = "{:06d}".format(frame)
 	out_file_name = name
@@ -152,8 +173,6 @@ def infer_gt_uncertainty(label_data, points_cam, frame, idxs, ax=None):
 		centers_plot, covs_plot = uncertain_label.calc_uncertainty_contour()
 		#DEBUG_eigvals = np.zeros((covs_plot.shape[0],2))
 		for i in range(covs_plot.shape[0]):
-			#tmp, _ = np.linalg.eigh(covs_plot[i,:,:].reshape((2,2)))
-			#DEBUG_eigvals[i, :] = 2*np.sqrt(tmp)
 			draw_birdeye_ellipse(ax, covs_plot[i,:,:].reshape((2,2)), centers_plot[i,:].reshape(2), nstd=1, alpha=0.1)#1.0/covs_plot.shape[0])
 	return
 
@@ -177,8 +196,8 @@ def write_NewIoU(output_dir, networks, frames, all_gt_idxs, all_pd_idxs, all_IoU
 	for net in networks:
 		with open(os.path.join(output_dir, net+'_IoU_summary.txt'), 'w') as fo1:
 			with open(os.path.join(output_dir, net+'_interest.txt'), 'w') as fo2:
-				fo1.write('frame, gt_idx, det_idx,  IoU, New(det&gt), New(det&gt_unc), New ratio\n')
-				fo2.write('frame, gt_idx, det_idx,  IoU, New(det&gt), New(det&gt_unc), New ratio\n')
+				fo1.write('frame, gt_idx, det_idx,  IoU, JIoU(det&gt), JIoU(det&gt_unc), JIoU ratio\n')
+				fo2.write('frame, gt_idx, det_idx,  IoU, JIoU(det&gt), JIoU(det&gt_unc), JIoU ratio\n')
 				for idfile, frame in enumerate(frames):
 					gt_idxs = all_gt_idxs[idfile][net]
 					pd_idxs = all_pd_idxs[idfile][net]

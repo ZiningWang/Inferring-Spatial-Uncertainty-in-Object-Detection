@@ -19,6 +19,8 @@ sys.path.append('../')
 from utils.paul_geometry import draw_3dbox_in_2d, read_calib_mat, camera_to_lidar, draw_birdeye, cal_box3d_iou, lidar_to_camera, clip_by_BEV_box, get_cov_ellipse, draw_birdeye_ellipse
 from utils.metric_plots import *
 from utils.kitti_utils import box3d_to_boxBEV
+from utils.probability_utils import W_Vs_3D_to_BEV_full
+from utils.metric_utils import label_inference_BEV, label_uncertainty_IoU, uncertain_prediction_BEVdelta, uncertain_prediction_BEV, uncertain_prediction_BEV_interp
 
 #modify this to view different networks
 networks = ['PointRCNN']
@@ -41,23 +43,27 @@ pred_3d_dirs.append('/data/RPN/coop_DiFeng/PointRCNN_val50/')
 actual_test = False
 data_dir = '/home/msc/KITTI/object' #'/data/RPN/coop_DiFeng/WaymoData' #
 
-def get_dirs(data_dir, actual_test):
-	if actual_test == False:
+def get_dirs(data_dir_in, actual_test_in, val_set=None):
+	if actual_test_in == False:
 		folder_name = 'training'
-		list_name = 'trainval'#'val_uncertainty_debug'#
-		label_3d_dir = os.path.join(data_dir, folder_name, 'label_2')
+		if val_set == 'Hujie':
+			print('Using validataion set of Hujie Pan.')
+			list_name = 'val_Hujie'
+		else:
+			list_name = 'val'#'val_uncertainty_debug'#
+		label_3d_dir = os.path.join(data_dir_in, folder_name, 'label_2')
 	else:
 		folder_name = 'testing'
 		list_name = 'test'
-	if data_dir.find('Waymo')!=-1 or data_dir.find('waymo') != -1:
+	if data_dir_in.find('Waymo')!=-1 or data_dir_in.find('waymo') != -1:
 		list_dir = '/data/RPN/coop_DiFeng/waymo_detection_2d/imageset/val.txt'#
 	else:
-		list_dir = '/home/msc/KITTI/object/kitti/ImageSets/{}.txt'.format(list_name)#
+		list_dir = os.path.join(data_dir_in, 'kitti/ImageSets/{}.txt'.format(list_name))#
 
-	img_dir = os.path.join(data_dir, folder_name, 'image_2')
-	lidar_dir = os.path.join(data_dir, folder_name, 'velodyne')
-	calib_dir = os.path.join(data_dir, folder_name, 'calib')
-	return list_dir, img_dir, lidar_dir, calib_dir
+	img_dir = os.path.join(data_dir_in, folder_name, 'image_2')
+	lidar_dir = os.path.join(data_dir_in, folder_name, 'velodyne')
+	calib_dir = os.path.join(data_dir_in, folder_name, 'calib')
+	return list_dir, img_dir, lidar_dir, calib_dir, label_3d_dir
 
 
 def label_reader(label_3d_dir,file_lists,calib_dir,max_num=7518):
@@ -135,13 +141,13 @@ def label_reader(label_3d_dir,file_lists,calib_dir,max_num=7518):
 				line = fi.readline()
 	return label_data
 
-def detect_reader(pred_3d_dir,file_lists,max_num=7518):
+def detect_reader(pred_3d_dir,file_lists,waymo_in_label_dir,max_num=7518):
 	attrs = ['class','box2D','box3D','ry','score','uncertainty','file_exists','alpha']
 	pred_data = {attr:[[] for name in range(max_num)] for attr in attrs}
 	print('reading prediction_data from: {}'.format(pred_3d_dir))
 	count = 0
 	using_waymo = False
-	if label_3d_dir.find('waymo') != -1 or label_3d_dir.find('Waymo') != -1:
+	if waymo_in_label_dir or pred_3d_dir.find('Waymo') != -1:
 		# require a special converter for waymo dataset
 		using_waymo = True
 	if os.path.isfile(pred_3d_dir+'uncertainty_calibration/scale.txt'):
@@ -180,9 +186,10 @@ def detect_reader(pred_3d_dir,file_lists,max_num=7518):
 				x2 = float(pred_infos[6])
 				y2 = float(pred_infos[7])
 				pred_data['box2D'][frame].append([x1,y1,x2,y2])
-				obj_h = float(pred_infos[8])
-				obj_w = float(pred_infos[9])
-				obj_l = float(pred_infos[10])
+				# Some predictions have negative lengths...
+				obj_h = abs(float(pred_infos[8]))
+				obj_w = abs(float(pred_infos[9]))
+				obj_l = abs(float(pred_infos[10]))
 				x_cam = float(pred_infos[11])
 				if not using_waymo:
 					y_cam = float(pred_infos[12])
@@ -287,38 +294,38 @@ def read_points_cam(lidar_dir, frame, label_data):
 
 def evaluate_new_IoU(label_data, pred_data, frame, gt_idxs, pd_idxs, points_cam, grid_size=0.1, sample_grid=0.1, unc_data=None):
 	assert(len(gt_idxs)==len(pd_idxs))
-	from metric_utils import label_inference_BEV, label_uncertainty_IoU, uncertain_prediction_BEVdelta, uncertain_prediction_BEV
 	inference = label_inference_BEV(degree_register=1,gen_std=0.25, prob_outlier=0.8,boundary_sample_interval=0.05)
 	IoUcalculator = label_uncertainty_IoU(grid_size=grid_size, range=3)
 	uncertain_labels = []
 	NewIoUs = []
-	pred_uncertainty_ind = True if pred_data['uncertainty'][frame] else False
+	pred_uncertainty_ind = True if pred_data['uncertainty'][frame] or unc_data else False
 	uncertainty_format = unc_data['uncertainty_format'] if unc_data else None
 	label_boxBEVs = box3d_to_boxBEV(np.array(label_data['box3D'][frame]), np.array(label_data['ry'][frame]))
 	pred_boxBEVs = box3d_to_boxBEV(np.array(pred_data['box3D'][frame]), np.array(pred_data['ry'][frame]))
+	if uncertainty_format == 'full':
+		W_BEV, Vs_BEV = W_Vs_3D_to_BEV_full(unc_data['homogeneous_w'][frame], unc_data['points_unc_sigma'][frame]**2)
+		assert (Vs_BEV.shape[0]==pred_boxBEVs.shape[0]), 'inconsistent prediction and uncertainty data at frame %d, %d vs %d.' % (frame, Vs_BEV.shape[0], pred_boxBEVs.shape[0])
 	for i, gt_idx in enumerate(gt_idxs):
-		points_clip_BEV = clip_by_BEV_box(points_cam, box3D[0:3], box3D[3:6], ry, buffer_size = 0.1)[:,[0,2]]
+		points_clip_BEV = clip_by_BEV_box(points_cam, label_data['box3D'][frame][gt_idx][0:3], label_data['box3D'][frame][gt_idx][3:6],
+										  label_data['ry'][frame][gt_idx], buffer_size = 0.1)[:,[0,2]]
 		uncertain_labels.append(inference.infer(points_clip_BEV, label_boxBEVs[gt_idx]))
 		certain_label = uncertain_prediction_BEVdelta(label_boxBEVs[gt_idx])
 		pd_idx = pd_idxs[i]
-		if uncertainty_format == 'full':
-			W_BEV, Vs_BEV = W_Vs_3D_to_BEV_full(unc_data['homogeneous_w'][frame], unc_data['points_unc'][frame])
 		if pd_idx >= 0:
-			pred_boxBEV = [box3D[0],box3D[2],box3D[5],box3D[4],ry]
-			boxBEV = box3d_to_boxBEV(np.array(pred_data['box3D'][frame]), ry=np.array(pred_data['ry'][frame]))
 			if pred_uncertainty_ind:
 				if uncertainty_format == 'full':
-					uncertain_pred = uncertain_prediction_interp(pred_boxBEVs[pd_idx], W_BEV, Vs_BEV[pd_idx])
+					if frame < 10:
+						print('using interpolated corner uncertainty as prediction uncertainty')
+					uncertain_pred = uncertain_prediction_BEV_interp(pred_boxBEVs[pd_idx], W_BEV, Vs_BEV[pd_idx])
 				elif uncertainty_format == 'corner':
 					assert False, 'Unimplemented prediction uncertainty model.'
 				else:
-					uncertain_pred = uncertain_prediction_BEV(pred_boxBEV, pred_data['uncertainty'][frame][pd_idx])
+					uncertain_pred = uncertain_prediction_BEV(pred_boxBEVs[pd_idx], pred_data['uncertainty'][frame][pd_idx])
 			else:
-				uncertain_pred = uncertain_prediction_BEVdelta(pred_boxBEV)
+				uncertain_pred = uncertain_prediction_BEVdelta(pred_boxBEVs[pd_idx])
 			NewIoU = IoUcalculator.calc_IoU(uncertain_labels[i], [uncertain_pred,certain_label], sample_grid=sample_grid)
 		else:
-			NewIoU = [0]
-			NewIoU = NewIoU + IoUcalculator.calc_IoU(uncertain_labels[i], [certain_label], sample_grid=sample_grid)
+			NewIoU = [0] + IoUcalculator.calc_IoU(uncertain_labels[i], [certain_label], sample_grid=sample_grid)
 		NewIoUs.append(NewIoU)
 	return NewIoUs
 
@@ -344,8 +351,8 @@ def main():
 
 	label_data = label_reader(label_3d_dir,file_lists,calib_dir)
 	for inet in range(len(networks)):
-		hack_datas[inet] = hacker_reader(pred_3d_dirs[inet],file_lists)
-		pred_datas[inet] = detect_reader(pred_3d_dirs[inet],file_lists)
+		hack_datas[inet] = hacker_reader(pred_3d_dirs[inet], file_lists)
+		pred_datas[inet] = detect_reader(pred_3d_dirs[inet], file_lists, label_3d_dir.find('waymo') != -1)
 
 	#all labels, newIoUs vs IoU
 	difficulty = 'HARD'

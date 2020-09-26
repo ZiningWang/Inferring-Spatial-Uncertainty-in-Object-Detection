@@ -1,6 +1,9 @@
+import os
 import numpy as np
 from scipy.spatial import Delaunay
 import scipy
+
+from easydict import EasyDict as edict
 #import lib.utils.object3d as object3d
 
 '''
@@ -175,3 +178,49 @@ def get_iou3d(corners3d, query_corners3d, need_bev=False):
         return iou3d, iou_bev
 
     return iou3d
+
+
+def save_kitti_format(sample_id, calib, bbox3d, kitti_output_dir, scores, img_shape, class_str='Car'):
+    corners3d = boxes3d_to_corners3d(bbox3d)
+    img_boxes, _ = calib.corners3d_to_img_boxes(corners3d)
+
+    img_boxes[:, 0] = np.clip(img_boxes[:, 0], 0, img_shape[1] - 1)
+    img_boxes[:, 1] = np.clip(img_boxes[:, 1], 0, img_shape[0] - 1)
+    img_boxes[:, 2] = np.clip(img_boxes[:, 2], 0, img_shape[1] - 1)
+    img_boxes[:, 3] = np.clip(img_boxes[:, 3], 0, img_shape[0] - 1)
+
+    img_boxes_w = img_boxes[:, 2] - img_boxes[:, 0]
+    img_boxes_h = img_boxes[:, 3] - img_boxes[:, 1]
+
+    kitti_output_file = os.path.join(kitti_output_dir, '%06d.txt' % sample_id)
+    with open(kitti_output_file, 'w') as f:
+        for k in range(bbox3d.shape[0]):
+            x, z, ry = bbox3d[k, 0], bbox3d[k, 2], bbox3d[k, 6]
+            beta = np.arctan2(z, x)
+            alpha = -np.sign(beta) * np.pi / 2 + beta + ry
+            while alpha < -np.pi:
+                alpha += 2*np.pi
+            while alpha > np.pi:
+                alpha -= 2*np.pi
+            while ry > np.pi:
+                ry -= 2*np.pi
+            while ry < -np.pi:
+                ry += 2*np.pi
+
+            print('%s -1 -1 %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f' %
+                  (class_str, alpha, img_boxes[k, 0], img_boxes[k, 1], img_boxes[k, 2], img_boxes[k, 3],
+                   bbox3d[k, 3], bbox3d[k, 4], bbox3d[k, 5], bbox3d[k, 0], bbox3d[k, 1], bbox3d[k, 2],
+                   bbox3d[k, 6], scores[k]), file=f)
+
+
+def box3DtoObj(box3D, ry = None):
+    obj = edict({})
+    if ry:
+        obj.R = ry
+    else:
+        obj.R = box3D[6]
+    obj.width = box3D[4]
+    obj.length = box3D[5]
+    obj.x = box3D[0]#-y_lidar
+    obj.y = box3D[2]#x_lidar
+    return obj 

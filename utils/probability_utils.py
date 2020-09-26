@@ -101,10 +101,10 @@ def W_Vs_3D_to_BEV_full(W_3D, Vs_diag_3D):
 def Hujie_uncertainty_reader(pred_dir, file_lists, max_num=7518):
 	import pickle
 	pickle_dir = pred_dir + 'unc_data/'
-	attrs = ['box3D','corners','points_unc','ry','homogeneous_w','uncertainty_format']
+	attrs = ['box3D','corners','points_unc_sigma','ry','homogeneous_w','uncertainty_format']
 	unc_data = {attr:[[] for name in range(max_num)] for attr in attrs}
 	print('reading data from: {}'.format(pickle_dir))
-	for file in tqdm(file_lists):
+	for file in file_lists:
 		file_num = file.split('.')[0]
 		name = file_num
 		frame = int(name)
@@ -114,6 +114,8 @@ def Hujie_uncertainty_reader(pred_dir, file_lists, max_num=7518):
 		unc_info = pickle.load(open(corner_unc_file_dir,"rb"))
 		# box3D is [x, y_top, z, h, w, l]
 		unc_data['box3D'][frame] = unc_info['bbox3d'][:,0:6]
+		# Some predictions got negative lengths....
+		unc_data['box3D'][frame][:, 3:6] = np.abs(unc_data['box3D'][frame][:, 3:6])
 		unc_data['ry'][frame] = unc_info['bbox3d'][:,6]
 		unc_data['corners'][frame] = boxes3d_to_corners3d(unc_info['bbox3d'])
 		if 'full' in pickle_dir:
@@ -124,8 +126,5 @@ def Hujie_uncertainty_reader(pred_dir, file_lists, max_num=7518):
 			assert False, 'The warning is treated as error for now.'
 			unc_data['homogeneous_w'][frame] = np.array([[0.5,-1,0.5,1],[0.5,-1,-0.5,1],[-0.5,-1,-0.5,1],[-0.5,-1,0.5,1],[0.5,0,0.5,1],[0.5,0,-0.5,1],[-0.5,0,-0.5,1],[-0.5,-0.5,0.5,1]])  #8*3
 			unc_data['uncertainty_format'] = 'corner'
-		unc_data['points_unc'][frame] = unc_info['bbox3d_sigma'].reshape([-1,8,3])
+		unc_data['points_unc_sigma'][frame] = unc_info['bbox3d_sigma'].reshape([-1,8,3])
 	return unc_data
-
-def Hujie_unctainty_to_prediction():
-	# This is to transform the uncertainty data to Kitti prediction format.

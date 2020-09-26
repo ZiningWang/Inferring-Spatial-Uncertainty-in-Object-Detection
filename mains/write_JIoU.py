@@ -89,10 +89,6 @@ def main():
 					tmp = [IoU[iI]] + NewIoUs[iI]
 					all_IoU_dic[id_file][net].append(tmp)
 
-		if active_gt_idxs.size>0:
-			pass
-			#corner_totalVariances.append(get_corner_variances(label_data, frame, gt_idxs, points_cam))
-			#plot_multiview_label(label_data, img_dir, points_cam, frame, gt_idxs, output_newIoU_dir, IoU_dic=all_IoU_dic[id_file], pd_idxs=pd_idxs, pred_data=pred_datas[len(pred_datas)-1])
 	output_newIoU_dir = output_dir + label_uncertainty_subfolder
 	write_NewIoU(output_newIoU_dir, networks, frames, all_gt_idxs, all_pd_idxs, all_IoU_dic)
 	#write_corner_variances(output_root, corner_totalVariances)
