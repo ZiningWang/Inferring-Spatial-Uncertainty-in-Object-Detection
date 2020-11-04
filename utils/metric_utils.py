@@ -166,14 +166,14 @@ class label_uncertainty_IoU:
 	def calc_IoU(self, uncertain_label, pred_boxBEVs, sample_grid=0.1):
 		sample_points, _ = self.get_sample_points(uncertain_label)
 		px = uncertain_label.sample_prob(sample_points, sample_grid=sample_grid)
-		NewIoU = []
+		JIoUs = []
 		for i in range(len(pred_boxBEVs)):
 			py = pred_boxBEVs[i].sample_prob(sample_points, sample_grid=sample_grid)
 			if np.sum(py) > 0 and np.sum(px) > 0:
-				NewIoU.append(self.Jaccard_discrete(px, py).item())
+				JIoUs.append(self.Jaccard_discrete(px, py).item())
 			else:
-				NewIoU.append(0)
-		return NewIoU
+				JIoUs.append(0)
+		return JIoUs
 
 	def get_sample_points(self, uncertain_label):
 		x = np.arange(-self.range / 2 + self.grid_size / 2, self.range / 2, self.grid_size)
@@ -411,7 +411,7 @@ class uncertain_label_BEV(uncertain_label):
 			clip_idx = np.logical_and(clip_idx, points_aligned_to_pred[:, 0] < l2)
 			clip_idx = np.logical_and(clip_idx, points_aligned_to_pred[:, 1] >= -w2)
 			clip_idx = np.logical_and(clip_idx, points_aligned_to_pred[:, 1] < w2)
-			# calculate NewIoU with discrete sample
+			# calculate JIoU with discrete sample
 			n_in = np.sum(clip_idx)
 			if n_in > 0:
 				probs[clip_idx] = 1 / n_in
@@ -571,7 +571,7 @@ class uncertain_prediction_BEVdelta(uncertain_prediction):
 		clip_idx = np.logical_and(clip_idx, points_aligned_to_pred[:, 0] < l2)
 		clip_idx = np.logical_and(clip_idx, points_aligned_to_pred[:, 1] >= -w2)
 		clip_idx = np.logical_and(clip_idx, points_aligned_to_pred[:, 1] < w2)
-		# calculate NewIoU with discrete sample
+		# calculate JIoU with discrete sample
 		n_in = np.sum(clip_idx)
 		if n_in > 0:
 			probs[clip_idx] = 1/n_in

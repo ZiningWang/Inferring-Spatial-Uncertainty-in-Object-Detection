@@ -167,8 +167,8 @@ def detect_reader(pred_3d_dir,file_lists,waymo_in_label_dir,max_num=7518):
 		file_num = pred_file.split('.')[0] 
 		name = file_num
 		frame = int(name)
-		pred_file_dir = os.path.join(pred_3d_dir+'data/', "{}.txt".format(file_num))
-		pred_uncertainty_dir = os.path.join(pred_3d_dir+'uncertainty/', "{}.txt".format(file_num))
+		pred_file_dir = os.path.join(pred_3d_dir,'data/', "{}.txt".format(file_num))
+		pred_uncertainty_dir = os.path.join(pred_3d_dir,'uncertainty/', "{}.txt".format(file_num))
 		#print("pred_file_dir: {}".format(pred_file_dir))
 		if not os.path.isfile(pred_file_dir):
 			continue
@@ -292,12 +292,12 @@ def read_points_cam(lidar_dir, frame, label_data):
 		points_cam = np.array((xs,ys,zs)).transpose()
 	return points_cam
 
-def evaluate_new_IoU(label_data, pred_data, frame, gt_idxs, pd_idxs, points_cam, grid_size=0.1, sample_grid=0.1, unc_data=None):
+def evaluate_JIoU(label_data, pred_data, frame, gt_idxs, pd_idxs, points_cam, grid_size=0.1, sample_grid=0.1, unc_data=None):
 	assert(len(gt_idxs)==len(pd_idxs))
 	inference = label_inference_BEV(degree_register=1,gen_std=0.25, prob_outlier=0.8,boundary_sample_interval=0.05)
 	IoUcalculator = label_uncertainty_IoU(grid_size=grid_size, range=3)
 	uncertain_labels = []
-	NewIoUs = []
+	JIoUs = []
 	pred_uncertainty_ind = True if pred_data['uncertainty'][frame] or unc_data else False
 	uncertainty_format = unc_data['uncertainty_format'] if unc_data else None
 	label_boxBEVs = box3d_to_boxBEV(np.array(label_data['box3D'][frame]), np.array(label_data['ry'][frame]))
@@ -312,6 +312,7 @@ def evaluate_new_IoU(label_data, pred_data, frame, gt_idxs, pd_idxs, points_cam,
 		certain_label = uncertain_prediction_BEVdelta(label_boxBEVs[gt_idx])
 		pd_idx = pd_idxs[i]
 		if pd_idx >= 0:
+			certain_pred = uncertain_prediction_BEVdelta(pred_boxBEVs[pd_idx])
 			if pred_uncertainty_ind:
 				if uncertainty_format == 'full':
 					if frame < 10:
@@ -323,11 +324,11 @@ def evaluate_new_IoU(label_data, pred_data, frame, gt_idxs, pd_idxs, points_cam,
 					uncertain_pred = uncertain_prediction_BEV(pred_boxBEVs[pd_idx], pred_data['uncertainty'][frame][pd_idx])
 			else:
 				uncertain_pred = uncertain_prediction_BEVdelta(pred_boxBEVs[pd_idx])
-			NewIoU = IoUcalculator.calc_IoU(uncertain_labels[i], [uncertain_pred,certain_label], sample_grid=sample_grid)
+			JIoU = IoUcalculator.calc_IoU(uncertain_labels[i], [uncertain_pred,certain_label,certain_pred], sample_grid=sample_grid)
 		else:
-			NewIoU = [0] + IoUcalculator.calc_IoU(uncertain_labels[i], [certain_label], sample_grid=sample_grid)
-		NewIoUs.append(NewIoU)
-	return NewIoUs
+			JIoU = [0] + IoUcalculator.calc_IoU(uncertain_labels[i], [certain_label], sample_grid=sample_grid) + [0]
+		JIoUs.append(JIoU)
+	return JIoUs
 
 def main():
 	# (1) get file list, label and images
@@ -354,7 +355,7 @@ def main():
 		hack_datas[inet] = hacker_reader(pred_3d_dirs[inet], file_lists)
 		pred_datas[inet] = detect_reader(pred_3d_dirs[inet], file_lists, label_3d_dir.find('waymo') != -1)
 
-	#all labels, newIoUs vs IoU
+	#all labels, JIoUs vs IoU
 	difficulty = 'HARD'
 	view = 'G'
 	frames = [int(file.split('.')[0]) for file in file_lists]
@@ -374,8 +375,8 @@ def main():
 		active_gt_idxs = np.argwhere(all_gts)
 		num_active_gts += active_gt_idxs.size
 		for inet, net in enumerate(networks):
-			output_newIoU_dir = output_dir + net + '_newIoUs/'
-			os.makedirs(output_newIoU_dir, exist_ok=True)
+			output_JIoU_dir = output_dir + net + '_JIoUs/'
+			os.makedirs(output_JIoU_dir, exist_ok=True)
 			if active_gt_idxs.size>0:
 				ass_det_idxs = np.array(hack_datas[inet][difficulty]['gt'][view]['det'][frame])[active_gt_idxs]
 				gt_idxs = [active_gt_idxs.item(i) for i in range(active_gt_idxs.size)]
@@ -389,17 +390,17 @@ def main():
 				all_gt_idxs[id_file][net] = gt_idxs
 				all_pd_idxs[id_file][net] = pd_idxs
 
-				NewIoUs = evaluate_new_IoU(label_data, pred_datas[inet], frame, gt_idxs, pd_idxs, points_cam, grid_size=0.1, sample_grid=0.02)
+				JIoUs = evaluate_JIoU(label_data, pred_datas[inet], frame, gt_idxs, pd_idxs, points_cam, grid_size=0.1, sample_grid=0.02)
 				for iI in range(len(IoU)):
-					tmp = [IoU[iI]] + NewIoUs[iI]
+					tmp = [IoU[iI]] + JIoUs[iI]
 					all_IoU_dic[id_file][net].append(tmp)
 
 		if active_gt_idxs.size>0:
 			pass
 			#corner_totalVariances.append(get_corner_variances(label_data, frame, gt_idxs, points_cam))
-			#plot_multiview_label(label_data, img_dir, points_cam, frame, gt_idxs, output_newIoU_dir, IoU_dic=all_IoU_dic[id_file], pd_idxs=pd_idxs, pred_data=pred_datas[len(pred_datas)-1])
-	output_newIoU_dir = output_dir + 'summary/uncertaintyV3_for_labelwellness_0.25_0.8_deg1/'
-	write_NewIoU(output_newIoU_dir, networks, frames, all_gt_idxs, all_pd_idxs, all_IoU_dic)
+			#plot_multiview_label(label_data, img_dir, points_cam, frame, gt_idxs, output_JIoU_dir, IoU_dic=all_IoU_dic[id_file], pd_idxs=pd_idxs, pred_data=pred_datas[len(pred_datas)-1])
+	output_JIoU_dir = output_dir + 'summary/uncertaintyV3_for_labelwellness_0.25_0.8_deg1/'
+	write_JIoU(output_JIoU_dir, networks, frames, all_gt_idxs, all_pd_idxs, all_IoU_dic)
 	#write_corner_variances(output_root, corner_totalVariances)
 
 	'''

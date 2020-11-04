@@ -191,13 +191,13 @@ def annotate_IoUs(ax, IoU_dic, centers, offset = [0,2.0], give_name=True):
 				IoU_text += '%1.2f, ' % (IoU)
 			ax.text(x,y,IoU_text, size=11)
 
-def write_NewIoU(output_dir, networks, frames, all_gt_idxs, all_pd_idxs, all_IoU_dic):
+def write_JIoU(output_dir, networks, frames, all_gt_idxs, all_pd_idxs, all_IoU_dic):
 	os.makedirs(output_dir, exist_ok=True)
 	for net in networks:
 		with open(os.path.join(output_dir, net+'_IoU_summary.txt'), 'w') as fo1:
 			with open(os.path.join(output_dir, net+'_interest.txt'), 'w') as fo2:
-				fo1.write('frame, gt_idx, det_idx,  IoU, JIoU(det&gt), JIoU(det&gt_unc), JIoU ratio\n')
-				fo2.write('frame, gt_idx, det_idx,  IoU, JIoU(det&gt), JIoU(det&gt_unc), JIoU ratio\n')
+				fo1.write('frame, gt_idx, det_idx,  IoU, JIoU(gt_unc&det_unc), JIoU(gt_unc&gt), JIoU(gt_unc&det), JIoU ratio\n')
+				fo2.write('frame, gt_idx, det_idx,  IoU, JIoU(gt_unc&det_unc), JIoU(gt_unc&gt), JIoU(gt_unc&det), JIoU ratio\n')
 				for idfile, frame in enumerate(frames):
 					gt_idxs = all_gt_idxs[idfile][net]
 					pd_idxs = all_pd_idxs[idfile][net]
@@ -205,9 +205,9 @@ def write_NewIoU(output_dir, networks, frames, all_gt_idxs, all_pd_idxs, all_IoU
 					for i, gt_idx in enumerate(gt_idxs):
 						pd_idx = pd_idxs[i]
 						IoU_dic = IoU_dics[i]
-						fo1.write('{:06d}, {:5d}, {:6d}, {:5.2f}, {:6.2f}, {:8.2f}, {:8.2f}\n'.format(frame, gt_idx, pd_idx, IoU_dic[0], IoU_dic[1], IoU_dic[2], IoU_dic[1]/IoU_dic[2]))
+						fo1.write('{:06d}, {:5d}, {:6d}, {:5.2f}, {:6.2f}, {:8.2f}, {:8.2f}, {:8.2f}\n'.format(frame, gt_idx, pd_idx, IoU_dic[0], IoU_dic[1], IoU_dic[2], IoU_dic[3], IoU_dic[1]/IoU_dic[2]))
 						if IoU_dic[2]<0.7:
-							fo2.write('{:06d}, {:5d}, {:6d}, {:5.2f}, {:6.2f}, {:8.2f}, {:8.2f}\n'.format(frame, gt_idx, pd_idx, IoU_dic[0], IoU_dic[1], IoU_dic[2], IoU_dic[1]/IoU_dic[2]))
+							fo2.write('{:06d}, {:5d}, {:6d}, {:5.2f}, {:6.2f}, {:8.2f}, {:8.2f}, {:8.2f}\n'.format(frame, gt_idx, pd_idx, IoU_dic[0], IoU_dic[1], IoU_dic[2], IoU_dic[3], IoU_dic[1]/IoU_dic[2]))
 
 
 def rewrite_detection_aligned(output_dir, pred_data, label_data, hack_data):
