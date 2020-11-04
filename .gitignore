@@ -1,5 +1,5 @@
-results
+results/
 *.m
 __pycache__
-matlab_scripts
-debug
+matlab_scripts/
+debug/
