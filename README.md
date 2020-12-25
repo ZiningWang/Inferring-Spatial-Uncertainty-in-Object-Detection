@@ -1,7 +1,7 @@
 
 # Inferring Spatial Uncertainty in Object Detection
 
-A teaser version of the code for the paper [**Inferring Spatial Uncertainty in Object Detection**](https://arxiv.org/pdf/2003.03644.pdf).
+A teaser version of the code for the paper [**Inferring Spatial Uncertainty in Object Detection**](https://arxiv.org/pdf/2012.12195.pdf).
 
 ## Usage
 ### C++ evaluation first
